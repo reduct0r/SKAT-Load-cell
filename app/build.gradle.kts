@@ -53,6 +53,13 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // navigation
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.navigation3.runtime)
+
+    // ble
+    implementation(libs.ble)
+    implementation(libs.ble.ktx)
+    implementation(libs.ble.common)
+    implementation(libs.ble.scanner)
 }
