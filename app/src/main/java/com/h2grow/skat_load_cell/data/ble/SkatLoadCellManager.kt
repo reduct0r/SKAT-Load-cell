@@ -6,6 +6,8 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.content.Context
 import android.util.Log
+import com.h2grow.skat_load_cell.domain.model.CommandResult
+import com.h2grow.skat_load_cell.domain.model.Telemetry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,29 +35,6 @@ import org.json.JSONObject
 class SkatLoadCellManager(
     context: Context,
 ) : BleManager(context) {
-
-    data class Telemetry(
-        val forceGrams: Float = 0f,
-        val currentAmps: Float = 0f,
-        val busVoltage: Float = 0f,
-        val hx711Ok: Boolean = false,
-        val ina226Ok: Boolean = false,
-        val ina226CalOk: Boolean = false,
-        val ina226Addr: Int = 0,
-        val i2cScan: String = "",
-        val scale: Float = 0f,
-    ) {
-        /** Для [com.h2grow.skat_load_cell.presentation.mainScreen.MainUiState] */
-        val weightGrams: Float get() = forceGrams
-    }
-
-    data class CommandResult(
-        val ok: Boolean,
-        val rawJson: String,
-        val error: String? = null,
-        val cmd: String? = null,
-    )
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
