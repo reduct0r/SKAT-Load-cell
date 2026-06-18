@@ -26,7 +26,8 @@ fun AppNav() {
 
                 is Route.Scanner -> NavEntry(key) {
                     ScannerScreen(
-                        onBack = { router.pop()  }
+                        onBack = { router.pop() },
+                        onConnected = { router.pop() },
                     )
                 }
 
