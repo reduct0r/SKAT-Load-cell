@@ -94,14 +94,19 @@ class ScannerViewModel @Inject constructor(
     fun connectToDevice(device: ScannedDevice) {
         if (_isConnecting.value) return
 
+        bleScanner.stopScan()
+        bleScanner.flushDevices()
+
         viewModelScope.launch {
             _isConnecting.value = true
             _connectingAddress.value = device.device.address
             _localError.value = null
-            bleScanner.stopScan()
 
             try {
                 loadCellManager.connectToDeviceAndWait(device.device)
+                if (!loadCellManager.isReady) {
+                    throw IllegalStateException("Подключение не установлено")
+                }
                 _connected.emit(Unit)
             } catch (e: Exception) {
                 _localError.value = e.message ?: "Ошибка подключения"

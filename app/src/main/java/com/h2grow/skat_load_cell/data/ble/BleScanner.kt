@@ -8,7 +8,6 @@ import com.h2grow.skat_load_cell.domain.model.ScannedDevice
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import no.nordicsemi.android.support.v18.scanner.BluetoothLeScannerCompat
 import no.nordicsemi.android.support.v18.scanner.ScanCallback
 import no.nordicsemi.android.support.v18.scanner.ScanFilter
@@ -40,17 +39,24 @@ class BleScanner(
     private val _devices = MutableStateFlow<List<ScannedDevice>>(emptyList())
     val devices: StateFlow<List<ScannedDevice>> = _devices.asStateFlow()
 
+    /** Порядок добавления сохраняется — список не прыгает при смене RSSI. */
+    private val deviceMap = linkedMapOf<String, ScannedDevice>()
+
     private var scanCallback: ScanCallback? = null
+    private var lastEmitMs = 0L
 
     fun isReady(): Boolean = adapter?.isEnabled == true
 
     @SuppressLint("MissingPermission")
     fun startScan(filters: List<ScanFilter> = emptyList()): Boolean {
-        if (_state.value is State.Scanning) return true
-
         if (adapter?.isEnabled != true) {
             _state.value = State.Failed("Bluetooth выключен")
             return false
+        }
+
+        // Перезапуск, если предыдущий scan завис в состоянии Scanning.
+        if (_state.value is State.Scanning) {
+            stopScanInternal(emitResults = false)
         }
 
         val callback = object : ScanCallback() {
@@ -81,6 +87,10 @@ class BleScanner(
 
     @SuppressLint("MissingPermission")
     fun stopScan() {
+        stopScanInternal(emitResults = true)
+    }
+
+    private fun stopScanInternal(emitResults: Boolean) {
         val callback = scanCallback ?: run {
             _state.value = State.Idle
             return
@@ -89,10 +99,21 @@ class BleScanner(
         scanner.stopScan(callback)
         scanCallback = null
         _state.value = State.Idle
+        if (emitResults) {
+            flushDevices()
+        }
     }
 
     fun clearResults() {
+        deviceMap.clear()
+        lastEmitMs = 0L
         _devices.value = emptyList()
+    }
+
+    /** Принудительно обновить UI-список (например, перед остановкой скана). */
+    fun flushDevices() {
+        lastEmitMs = System.currentTimeMillis()
+        emitDevices()
     }
 
     @SuppressLint("MissingPermission")
@@ -110,12 +131,24 @@ class BleScanner(
             lastSeenMs = System.currentTimeMillis(),
         )
 
-        _devices.update { current ->
-            current
-                .filterNot { it.device.address == address }
-                .plus(scanned)
-                .sortedByDescending { it.rssi }
+        val isNew = !deviceMap.containsKey(address)
+        deviceMap[address] = scanned
+
+        val now = System.currentTimeMillis()
+        if (isNew || now - lastEmitMs >= EMIT_INTERVAL_MS) {
+            lastEmitMs = now
+            emitDevices()
         }
+    }
+
+    private fun emitDevices() {
+        _devices.value = deviceMap.values
+            .sortedWith(
+                compareByDescending<ScannedDevice> { device ->
+                    device.name.contains("SKAT", ignoreCase = true)
+                }.thenBy { it.name.lowercase() }
+                    .thenBy { it.device.address },
+            )
     }
 
     private fun scanSettings(): ScanSettings =
@@ -126,7 +159,7 @@ class BleScanner(
             .setNumOfMatches(ScanSettings.MATCH_NUM_MAX_ADVERTISEMENT)
             .setReportDelay(0L)
             .setUseHardwareBatchingIfSupported(false)
-            .setUseHardwareFilteringIfSupported(true)
+            .setUseHardwareFilteringIfSupported(false)
             .build()
 
     private fun scanErrorMessage(errorCode: Int): String = when (errorCode) {
@@ -140,5 +173,9 @@ class BleScanner(
         ScanCallback.SCAN_FAILED_SCANNING_TOO_FREQUENTLY ->
             "Слишком частые запуски сканирования — подождите"
         else -> "Ошибка сканирования: $errorCode"
+    }
+
+    private companion object {
+        const val EMIT_INTERVAL_MS = 1_000L
     }
 }

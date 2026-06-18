@@ -153,6 +153,7 @@ fun ScannerScreen(
                                 device = device,
                                 isConnecting = uiState.isConnecting &&
                                     uiState.connectingAddress == device.device.address,
+                                enabled = !uiState.isConnecting,
                                 onClick = { viewModel.connectToDevice(device) },
                             )
                             HorizontalDivider()
@@ -187,13 +188,14 @@ private fun ScannerStatusBar(uiState: ScannerUiState) {
 private fun DeviceListItem(
     device: ScannedDevice,
     isConnecting: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val isSkatDevice = device.name.contains("SKAT", ignoreCase = true) ||
         device.name == SkatLoadCellSpec.DEVICE_NAME
 
     ListItem(
-        modifier = Modifier.clickable(enabled = !isConnecting, onClick = onClick),
+        modifier = Modifier.clickable(enabled = enabled && !isConnecting, onClick = onClick),
         headlineContent = {
             Text(
                 text = device.name,

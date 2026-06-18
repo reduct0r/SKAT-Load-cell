@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattService
 import android.content.Context
 import android.util.Log
 import com.h2grow.skat_load_cell.domain.model.CommandResult
@@ -12,48 +13,41 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withTimeout
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.data.Data
 import no.nordicsemi.android.ble.ktx.asFlow
-import no.nordicsemi.android.ble.ktx.getCharacteristic
-import no.nordicsemi.android.ble.ktx.state.ConnectionState
-import no.nordicsemi.android.ble.ktx.stateAsFlow
 import no.nordicsemi.android.ble.ktx.suspend
 import org.json.JSONObject
+import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SkatLoadCellManager(
     context: Context,
 ) : BleManager(context) {
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var commandCharacteristic: BluetoothGattCharacteristic? = null
     private var responseCharacteristic: BluetoothGattCharacteristic? = null
 
-    private val responseChannel = Channel<String>(capacity = 1)
+    private val responseChannel = kotlinx.coroutines.channels.Channel<String>(capacity = 1)
 
     private val _telemetry = MutableStateFlow(Telemetry())
     val telemetry: StateFlow<Telemetry> = _telemetry.asStateFlow()
 
-    val connectionState: StateFlow<ConnectionState> = stateAsFlow()
-        .stateIn(
-            scope = scope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ConnectionState.Disconnected(
-                ConnectionState.Disconnected.Reason.UNKNOWN,
-            ),
-        )
+    private val _isConnected = MutableStateFlow(false)
+    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    var connectedDeviceName: String? = null
+        private set
 
     override fun getMinLogPriority(): Int = Log.INFO
 
@@ -62,27 +56,72 @@ class SkatLoadCellManager(
     }
 
     override fun isRequiredServiceSupported(gatt: BluetoothGatt): Boolean {
-        val service = gatt.getService(SkatLoadCellSpec.SERVICE) ?: return false
+        val service = findSkatService(gatt)
+        if (service == null) {
+            log(Log.WARN, "SKAT service not found. Services: ${gatt.services.map { it.uuid }}")
+            return false
+        }
 
-        telemetryCharacteristic = service.getCharacteristic(
-            SkatLoadCellSpec.TELEMETRY,
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-        )
-        commandCharacteristic = service.getCharacteristic(
-            SkatLoadCellSpec.COMMAND,
-            BluetoothGattCharacteristic.PROPERTY_WRITE,
-        )
-        responseCharacteristic = service.getCharacteristic(
-            SkatLoadCellSpec.RESPONSE,
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-        )
+        log(Log.INFO, "SKAT service: ${service.uuid}")
+        service.characteristics.forEach { characteristic ->
+            log(Log.INFO, "  ${characteristic.uuid} props=0x${characteristic.properties.toString(16)}")
+        }
 
-        return telemetryCharacteristic != null &&
+        telemetryCharacteristic = service.findCharacteristic(SkatLoadCellSpec.TELEMETRY)
+            ?: service.findCharacteristic(SkatLoadCellSpec.LEGACY_TELEMETRY)
+        commandCharacteristic = service.findCharacteristic(SkatLoadCellSpec.COMMAND)
+            ?: service.findCharacteristic(SkatLoadCellSpec.LEGACY_COMMAND)
+        responseCharacteristic = service.findCharacteristic(SkatLoadCellSpec.RESPONSE)
+            ?: service.findCharacteristic(SkatLoadCellSpec.LEGACY_RESPONSE)
+
+        resolveCharacteristicsByProperties(service)
+
+        val ok = telemetryCharacteristic != null &&
             commandCharacteristic != null &&
             responseCharacteristic != null
+
+        if (!ok) {
+            log(
+                Log.WARN,
+                "Missing characteristics. telemetry=${telemetryCharacteristic != null}, " +
+                    "command=${commandCharacteristic != null}, response=${responseCharacteristic != null}",
+            )
+        }
+        return ok
+    }
+
+    private fun findSkatService(gatt: BluetoothGatt): BluetoothGattService? {
+        gatt.getService(SkatLoadCellSpec.SERVICE)?.let { return it }
+        gatt.getService(SkatLoadCellSpec.LEGACY_SERVICE)?.let { return it }
+        return gatt.services.firstOrNull { it.uuid !in SkatLoadCellSpec.STANDARD_BLE_SERVICES }
+    }
+
+    private fun resolveCharacteristicsByProperties(service: BluetoothGattService) {
+        if (commandCharacteristic == null) {
+            commandCharacteristic = service.characteristics.firstOrNull { characteristic ->
+                val props = characteristic.properties
+                val canWrite = props and (
+                    BluetoothGattCharacteristic.PROPERTY_WRITE or
+                        BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
+                    ) != 0
+                canWrite && props and BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0
+            }
+        }
+
+        val notifyCharacteristics = service.characteristics.filter { characteristic ->
+            characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+        }
+
+        if (telemetryCharacteristic == null && notifyCharacteristics.isNotEmpty()) {
+            telemetryCharacteristic = notifyCharacteristics.first()
+        }
+        if (responseCharacteristic == null && notifyCharacteristics.size >= 2) {
+            responseCharacteristic = notifyCharacteristics[1]
+        }
     }
 
     override fun initialize() {
+        _isConnected.value = true
         requestMtu(247).enqueue()
 
         telemetryCharacteristic?.let { characteristic ->
@@ -112,29 +151,41 @@ class SkatLoadCellManager(
     }
 
     override fun onServicesInvalidated() {
+        _isConnected.value = false
         telemetryCharacteristic = null
         commandCharacteristic = null
         responseCharacteristic = null
         _telemetry.value = Telemetry()
+        connectedDeviceName = null
         while (responseChannel.tryReceive().isSuccess) { /* drain */ }
     }
 
     @SuppressLint("MissingPermission")
-    fun connectToDevice(device: BluetoothDevice) {
-        connect(device)
-            .retry(3, 300)
-            .useAutoConnect(false)
-            .timeout(15_000)
-            .enqueue()
-    }
-
-    @SuppressLint("MissingPermission")
     suspend fun connectToDeviceAndWait(device: BluetoothDevice) {
+        connectedDeviceName = device.name?.takeIf { it.isNotBlank() } ?: device.address
+
+        if (isReady) {
+            disconnect().suspend()
+            delay(300)
+        } else {
+            cancelQueue()
+        }
+
         connect(device)
             .retry(3, 300)
             .useAutoConnect(false)
             .timeout(15_000)
             .suspend()
+
+        if (!isReady) {
+            throw IllegalStateException("Устройство не готово после подключения")
+        }
+
+        try {
+            requestData()
+        } catch (e: Exception) {
+            log(Log.WARN, "Первый запрос данных не удался: ${e.message}")
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -143,15 +194,6 @@ class SkatLoadCellManager(
             disconnect().enqueue()
         } else {
             cancelQueue()
-        }
-    }
-
-    fun release() {
-        scope.cancel()
-        val wasConnected = isReady
-        cancelQueue()
-        if (wasConnected) {
-            disconnect().enqueue()
         }
     }
 
@@ -200,6 +242,7 @@ class SkatLoadCellManager(
 
     private fun parseTelemetry(data: Data) {
         val json = data.getStringValue(0) ?: return
+        if (json.isBlank() || json == "{}") return
         parseTelemetryJson(json)?.let { _telemetry.value = it }
     }
 
@@ -240,6 +283,9 @@ class SkatLoadCellManager(
             CommandResult(ok = false, rawJson = rawJson, error = e.message)
         }
     }
+
+    private fun BluetoothGattService.findCharacteristic(uuid: UUID): BluetoothGattCharacteristic? =
+        getCharacteristic(uuid) ?: characteristics.firstOrNull { it.uuid == uuid }
 
     private companion object {
         const val TAG = "SkatLoadCellManager"
