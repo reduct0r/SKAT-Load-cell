@@ -6,15 +6,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +47,8 @@ internal fun MainScreenContent(
     onGoToScanner: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var valuePWM by remember { mutableFloatStateOf(5f) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -113,7 +122,54 @@ internal fun MainScreenContent(
         }
 
         HorizontalDivider(
-            thickness = 5.dp,
+            thickness = 3.dp,
+            color = Color.Gray
+        )
+
+
+        Column(modifier = modifier) {
+
+            Row(modifier = modifier
+                .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(
+                    24.dp,
+                    Alignment.CenterHorizontally
+                )
+            ) {
+                Text(
+                    text = "%.1f".format(valuePWM) + " %",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Text(
+                    text = "%.1f".format(valuePWM) + " PWM",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+
+            Slider(
+                value = valuePWM,
+                onValueChange = { valuePWM = it },
+                valueRange = 0f..100f,
+                steps = 1000
+            )
+
+            Button(
+                modifier = modifier
+                    .width(200.dp),
+                onClick = { },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Red,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Arm")
+            }
+        }
+
+        HorizontalDivider(
+            thickness = 3.dp,
             color = Color.Gray
         )
 
