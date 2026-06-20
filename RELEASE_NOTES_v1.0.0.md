@@ -34,7 +34,7 @@
 
 **Ток/напряжение:** указать шунт → Применить → Перекалибровать INA226; напряжение — по мультиметру; ток — Обнулить ток при Disarm.
 
-Подробная инструкция — в [README.md](https://github.com/reduct0r/SKAT-Load-cell/blob/main/README.md).
+Подробная инструкция — в [README.md](https://github.com/reduct0r/SKAT-Load-cell/blob/master/README.md).
 
 ## Состав релиза
 
