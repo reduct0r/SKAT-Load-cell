@@ -1,3 +1,8 @@
+
+   <p align="center">
+      <img width="192" height="192" alt="icon_launcher" src="https://github.com/user-attachments/assets/2f1930c5-8fd1-49dd-b992-e871e71d4c31" />
+   </p>
+   
 # SKAT Motor Tester
 
 Android-приложение для стенда **SKAT-Tenzo**: измерение силы тяги, тока и напряжения по Bluetooth LE, управление приводом ESC и запись телеметрии на графики.
