@@ -160,14 +160,14 @@ fun MotorThrottleSlider(
 @Composable
 fun MotorPwmReadout(
     percent: Float,
-    pwmRaw: Int,
+    escPulseUs: Int,
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val activeColor = Color(0xFF22C55E)
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     val displayPercent = if (enabled) percent else 0f
-    val displayPwm = if (enabled) pwmRaw else 0
+    val displayPulse = if (enabled) escPulseUs else 1000
 
     Row(
         modifier = modifier
@@ -200,18 +200,18 @@ fun MotorPwmReadout(
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "PWM (ESP)",
+                text = "ESC",
                 style = MaterialTheme.typography.labelMedium,
                 color = mutedColor,
             )
             Text(
-                text = displayPwm.toString(),
+                text = "$displayPulse µs",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else mutedColor,
             )
             Text(
-                text = "0…1023",
+                text = "1000…2000",
                 style = MaterialTheme.typography.labelSmall,
                 color = mutedColor,
             )

@@ -31,7 +31,8 @@ class MainViewModel @Inject constructor(
             ina226Ok = telemetry.ina226Ok,
             motorsArmed = telemetry.motorsArmed,
             motorPwmPercent = telemetry.motorPwmPercent,
-            motorPwmRaw = telemetry.motorPwmRaw,
+            motorPwmRaw = telemetry.escPulseUs,
+            escPulseUs = telemetry.escPulseUs,
         )
     }.stateIn(
         scope = viewModelScope,

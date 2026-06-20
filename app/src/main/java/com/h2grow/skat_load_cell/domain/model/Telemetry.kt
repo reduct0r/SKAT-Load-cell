@@ -15,8 +15,14 @@ data class Telemetry(
     val scale: Float = 0f,
     val motorsArmed: Boolean = false,
     val motorPwmPercent: Float = 0f,
-    /** Сырой PWM с ESP (0…1023) */
     val motorPwmRaw: Int = 0,
+    val escPulseUs: Int = 1000,
+    val escMinUs: Int = 1000,
+    val escMaxUs: Int = 2000,
+    val shuntMv: Float = 0f,
+    val shuntOhm: Float = 0.005f,
+    val currentSign: Int = 1,
+    val hx711Raw: Long = 0,
 ) {
     val massGrams: Float get() = forceGrams
     val powerWatts: Float get() = busVoltage * currentAmps

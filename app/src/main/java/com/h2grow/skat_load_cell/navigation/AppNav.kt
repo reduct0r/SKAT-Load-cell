@@ -9,6 +9,7 @@ import com.h2grow.skat_load_cell.presentation.charts.ChartSeries
 import com.h2grow.skat_load_cell.presentation.charts.ChartsDetailScreen
 import com.h2grow.skat_load_cell.presentation.mainScreen.MainScreen
 import com.h2grow.skat_load_cell.presentation.scannerScreen.ScannerScreen
+import com.h2grow.skat_load_cell.presentation.settingsScreen.SettingsScreen
 
 @Composable
 fun AppNav() {
@@ -22,7 +23,12 @@ fun AppNav() {
                     MainScreen(
                         onGoToScanner = { router.push(Route.Scanner) },
                         onOpenChartsDetail = { router.push(Route.ChartsDetail) },
+                        onOpenSettings = { router.push(Route.Settings) },
                     )
+                }
+
+                is Route.Settings -> NavEntry(key) {
+                    SettingsScreen(onBack = { router.pop() })
                 }
 
                 is Route.Scanner -> NavEntry(key) {

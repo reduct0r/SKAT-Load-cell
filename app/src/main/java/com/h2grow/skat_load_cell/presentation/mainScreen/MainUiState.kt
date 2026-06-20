@@ -14,4 +14,5 @@ data class MainUiState(
     val motorsArmed: Boolean = false,
     val motorPwmPercent: Float = 0f,
     val motorPwmRaw: Int = 0,
+    val escPulseUs: Int = 1000,
 )

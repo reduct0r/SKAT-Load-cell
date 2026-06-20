@@ -1,5 +1,6 @@
 package com.h2grow.skat_load_cell.presentation.mainScreen
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,6 +12,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -38,12 +43,12 @@ import com.h2grow.skat_load_cell.presentation.charts.ChartSeries
 import com.h2grow.skat_load_cell.presentation.charts.ChartVisibility
 import com.h2grow.skat_load_cell.presentation.charts.ChartsViewModel
 import com.h2grow.skat_load_cell.ui.theme.SKATLoadcellTheme
-import kotlinx.coroutines.delay
 
 @Composable
 fun MainScreen(
     onGoToScanner: () -> Unit,
     onOpenChartsDetail: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: MainViewModel = hiltViewModel(),
     chartsViewModel: ChartsViewModel = hiltViewModel(),
 ) {
@@ -56,6 +61,7 @@ fun MainScreen(
         chartVisibility = chartVisibility,
         onGoToScanner = onGoToScanner,
         onOpenChartsDetail = onOpenChartsDetail,
+        onOpenSettings = onOpenSettings,
         onToggleChartSeries = chartsViewModel::toggleSeries,
         onResetCharts = chartsViewModel::reset,
         onArmToggle = { armed -> viewModel.setMotorsArmed(armed) },
@@ -70,6 +76,7 @@ internal fun MainScreenContent(
     chartVisibility: ChartVisibility = ChartVisibility(),
     onGoToScanner: () -> Unit,
     onOpenChartsDetail: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onToggleChartSeries: (ChartSeries, Boolean) -> Unit = { _, _ -> },
     onResetCharts: () -> Unit = {},
     onArmToggle: (Boolean) -> Unit = {},
@@ -85,12 +92,6 @@ internal fun MainScreenContent(
         }
     }
 
-    LaunchedEffect(localPwm, uiState.motorsArmed, uiState.isConnected) {
-        if (!uiState.isConnected || !uiState.motorsArmed) return@LaunchedEffect
-        delay(120)
-        onMotorPwmChange(localPwm)
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -102,17 +103,37 @@ internal fun MainScreenContent(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = if (uiState.isConnected) "Подключено" else "Не подключено",
-                style = MaterialTheme.typography.titleMedium,
-                color = if (uiState.isConnected) Color(0xFF22C55E) else MaterialTheme.colorScheme.error,
-            )
-            uiState.deviceName?.let { name ->
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+            ) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = if (uiState.isConnected) "Подключено" else "Не подключено",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (uiState.isConnected) Color(0xFF22C55E) else MaterialTheme.colorScheme.error,
+                    )
+                    uiState.deviceName?.let { name ->
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Калибровка и настройки",
+                    )
+                }
             }
         }
 
@@ -179,13 +200,18 @@ internal fun MainScreenContent(
         ) {
             MotorPwmReadout(
                 percent = localPwm,
-                pwmRaw = uiState.motorPwmRaw,
+                escPulseUs = uiState.escPulseUs,
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
 
             MotorThrottleSlider(
                 value = localPwm,
-                onValueChange = { localPwm = it },
+                onValueChange = { value ->
+                    localPwm = value
+                    if (uiState.isConnected && uiState.motorsArmed) {
+                        onMotorPwmChange(value)
+                    }
+                },
                 onDraggingChange = { isDraggingPwm = it },
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
@@ -306,7 +332,7 @@ private fun PreviewMainScreenArmed() {
                 ina226Ok = true,
                 motorsArmed = true,
                 motorPwmPercent = 42f,
-                motorPwmRaw = 419,
+                escPulseUs = 1420,
             ),
             onGoToScanner = {},
         )

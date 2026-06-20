@@ -220,6 +220,28 @@ class SkatLoadCellManager(
     suspend fun reset(): CommandResult =
         sendCommand(JSONObject().put("cmd", "reset"))
 
+    suspend fun recalibrateIna226(): CommandResult =
+        sendCommand(JSONObject().put("cmd", "recal_ina226"))
+
+    suspend fun zeroCurrent(): CommandResult =
+        sendCommand(JSONObject().put("cmd", "zero_current"))
+
+    suspend fun setCurrentSign(sign: Int): CommandResult =
+        sendCommand(
+            JSONObject()
+                .put("cmd", "set_current_sign")
+                .put("sign", sign),
+        )
+
+    suspend fun setShunt(extOhm: Float, brdOhm: Float, includeBoard: Boolean): CommandResult =
+        sendCommand(
+            JSONObject()
+                .put("cmd", "set_shunt")
+                .put("ext_ohm", extOhm.toDouble())
+                .put("brd_ohm", brdOhm.toDouble())
+                .put("include_brd", includeBoard),
+        )
+
     suspend fun armMotors(): CommandResult =
         sendCommand(JSONObject().put("cmd", "arm"))
 
@@ -290,7 +312,14 @@ class SkatLoadCellManager(
             scale = obj.optDouble("scale", 0.0).toFloat(),
             motorsArmed = obj.optBoolean("motors_armed", false),
             motorPwmPercent = obj.optDouble("motor_pwm_pct", 0.0).toFloat(),
-            motorPwmRaw = obj.optInt("motor_pwm", 0),
+            motorPwmRaw = obj.optInt("motor_pwm", obj.optInt("esc_pulse_us", 0)),
+            escPulseUs = obj.optInt("esc_pulse_us", obj.optInt("motor_pwm", 0)),
+            escMinUs = obj.optInt("esc_min_us", 1000),
+            escMaxUs = obj.optInt("esc_max_us", 2000),
+            shuntMv = obj.optDouble("shunt_mv", 0.0).toFloat(),
+            shuntOhm = obj.optDouble("shunt_ohm", 0.005).toFloat(),
+            currentSign = obj.optInt("current_sign", 1),
+            hx711Raw = obj.optLong("hx711_raw", 0),
         )
     } catch (e: Exception) {
         log(Log.WARN, "Bad telemetry JSON: $json (${e.message})")
