@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,7 @@ fun MotorThrottleSlider(
     onValueChange: (Float) -> Unit,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    onDraggingChange: (Boolean) -> Unit = {},
 ) {
     val trackHeight = 14.dp
     val thumbRadius = 22.dp
@@ -51,12 +53,13 @@ fun MotorThrottleSlider(
     )
 
     var dragValue by remember { mutableFloatStateOf(value) }
+    var isDragging by remember { mutableStateOf(false) }
     val displayValue = if (enabled) dragValue.coerceIn(0f, 100f) else 0f
 
     androidx.compose.runtime.LaunchedEffect(value, enabled) {
         if (!enabled) {
             dragValue = 0f
-        } else {
+        } else if (!isDragging) {
             dragValue = value.coerceIn(0f, 100f)
         }
     }
@@ -75,12 +78,20 @@ fun MotorThrottleSlider(
                     if (!enabled) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
+                            isDragging = true
+                            onDraggingChange(true)
                             val fraction = (offset.x / size.width).coerceIn(0f, 1f)
                             dragValue = fraction * 100f
                             onValueChange(dragValue)
                         },
-                        onDragEnd = {},
-                        onDragCancel = {},
+                        onDragEnd = {
+                            isDragging = false
+                            onDraggingChange(false)
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            onDraggingChange(false)
+                        },
                         onHorizontalDrag = { _, dragAmount ->
                             val fractionDelta = dragAmount / size.width * 100f
                             dragValue = (dragValue + fractionDelta).coerceIn(0f, 100f)
@@ -200,7 +211,7 @@ fun MotorPwmReadout(
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else mutedColor,
             )
             Text(
-                text = "response",
+                text = "0…1023",
                 style = MaterialTheme.typography.labelSmall,
                 color = mutedColor,
             )

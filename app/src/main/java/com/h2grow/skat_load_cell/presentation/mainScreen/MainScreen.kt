@@ -1,9 +1,13 @@
 package com.h2grow.skat_load_cell.presentation.mainScreen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -17,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,18 +32,32 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.h2grow.skat_load_cell.presentation.charts.ChartPanelCard
+import com.h2grow.skat_load_cell.presentation.charts.ChartSample
+import com.h2grow.skat_load_cell.presentation.charts.ChartSeries
+import com.h2grow.skat_load_cell.presentation.charts.ChartVisibility
+import com.h2grow.skat_load_cell.presentation.charts.ChartsViewModel
 import com.h2grow.skat_load_cell.ui.theme.SKATLoadcellTheme
 import kotlinx.coroutines.delay
 
 @Composable
 fun MainScreen(
     onGoToScanner: () -> Unit,
+    onOpenChartsDetail: () -> Unit,
     viewModel: MainViewModel = hiltViewModel(),
+    chartsViewModel: ChartsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val chartSamples by chartsViewModel.samples.collectAsStateWithLifecycle()
+    val chartVisibility by chartsViewModel.visibility.collectAsStateWithLifecycle()
     MainScreenContent(
         uiState = uiState,
+        chartSamples = chartSamples,
+        chartVisibility = chartVisibility,
         onGoToScanner = onGoToScanner,
+        onOpenChartsDetail = onOpenChartsDetail,
+        onToggleChartSeries = chartsViewModel::toggleSeries,
+        onResetCharts = chartsViewModel::reset,
         onArmToggle = { armed -> viewModel.setMotorsArmed(armed) },
         onMotorPwmChange = viewModel::setMotorPwm,
     )
@@ -47,15 +66,23 @@ fun MainScreen(
 @Composable
 internal fun MainScreenContent(
     uiState: MainUiState,
+    chartSamples: List<ChartSample> = emptyList(),
+    chartVisibility: ChartVisibility = ChartVisibility(),
     onGoToScanner: () -> Unit,
+    onOpenChartsDetail: () -> Unit = {},
+    onToggleChartSeries: (ChartSeries, Boolean) -> Unit = { _, _ -> },
+    onResetCharts: () -> Unit = {},
     onArmToggle: (Boolean) -> Unit = {},
     onMotorPwmChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var localPwm by remember { mutableFloatStateOf(0f) }
+    var isDraggingPwm by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.motorPwmPercent, uiState.motorsArmed) {
-        localPwm = if (uiState.motorsArmed) uiState.motorPwmPercent else 0f
+        if (!isDraggingPwm) {
+            localPwm = if (uiState.motorsArmed) uiState.motorPwmPercent else 0f
+        }
     }
 
     LaunchedEffect(localPwm, uiState.motorsArmed, uiState.isConnected) {
@@ -67,6 +94,9 @@ internal fun MainScreenContent(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -148,7 +178,7 @@ internal fun MainScreenContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MotorPwmReadout(
-                percent = uiState.motorPwmPercent,
+                percent = localPwm,
                 pwmRaw = uiState.motorPwmRaw,
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
@@ -156,6 +186,7 @@ internal fun MainScreenContent(
             MotorThrottleSlider(
                 value = localPwm,
                 onValueChange = { localPwm = it },
+                onDraggingChange = { isDraggingPwm = it },
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
 
@@ -186,6 +217,15 @@ internal fun MainScreenContent(
         }
 
         HorizontalDivider(thickness = 2.dp, color = Color(0xFF334155))
+
+        ChartPanelCard(
+            samples = chartSamples,
+            visibility = chartVisibility,
+            onToggleSeries = onToggleChartSeries,
+            onReset = onResetCharts,
+            onOpenDetails = onOpenChartsDetail,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
         Button(onClick = onGoToScanner) {
             Text(if (uiState.isConnected) "Сменить устройство" else "Найти устройство")
@@ -225,7 +265,7 @@ private fun MetricRow(
 @Preview(showBackground = true)
 @Composable
 private fun PreviewMainScreenDisconnected() {
-    SKATLoadcellTheme(dynamicColor = false) {
+    SKATLoadcellTheme {
         MainScreenContent(uiState = MainUiState(), onGoToScanner = {})
     }
 }
@@ -233,7 +273,7 @@ private fun PreviewMainScreenDisconnected() {
 @Preview(showBackground = true)
 @Composable
 private fun PreviewMainScreenConnected() {
-    SKATLoadcellTheme(dynamicColor = false) {
+    SKATLoadcellTheme {
         MainScreenContent(
             uiState = MainUiState(
                 isConnected = true,
@@ -253,7 +293,7 @@ private fun PreviewMainScreenConnected() {
 @Preview(showBackground = true)
 @Composable
 private fun PreviewMainScreenArmed() {
-    SKATLoadcellTheme(dynamicColor = false) {
+    SKATLoadcellTheme {
         MainScreenContent(
             uiState = MainUiState(
                 isConnected = true,
