@@ -51,6 +51,15 @@ internal fun interpolateSample(samples: List<ChartSample>, fraction: Float): Cro
     return CrosshairValues(timestampMs = time, values = values)
 }
 
+internal fun fractionForTimestamp(samples: List<ChartSample>, timestampMs: Long): Float {
+    if (samples.isEmpty()) return 1f
+    if (samples.size == 1) return 0f
+    val first = samples.first().timestampMs
+    val last = samples.last().timestampMs
+    if (last <= first) return 1f
+    return ((timestampMs - first).toFloat() / (last - first)).coerceIn(0f, 1f)
+}
+
 internal fun formatTimeAxis(timestampMs: Long, startMs: Long): String {
     val seconds = ((timestampMs - startMs) / 1000f).coerceAtLeast(0f)
     return if (seconds >= 60f) {

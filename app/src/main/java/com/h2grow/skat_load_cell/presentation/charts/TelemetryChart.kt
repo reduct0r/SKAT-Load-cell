@@ -2,7 +2,6 @@ package com.h2grow.skat_load_cell.presentation.charts
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,8 +10,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +45,9 @@ fun TelemetryMultiChart(
     singleSeries: ChartSeries? = null,
 ) {
     val activeSeries = singleSeries?.let { listOf(it) } ?: visibility.visibleSeries()
-    var crosshairFraction by remember { mutableFloatStateOf(1f) }
+    var crosshairTimestampMs by remember { mutableLongStateOf(-1L) }
+    var hasCrosshair by remember { mutableStateOf(false) }
+    val latestSamples by rememberUpdatedState(samples)
     val textMeasurer = rememberTextMeasurer()
     val axisTextColor = MaterialTheme.colorScheme.onSurface
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
@@ -58,28 +61,38 @@ fun TelemetryMultiChart(
     val crosshairLineColor = MaterialTheme.colorScheme.outline
     val density = LocalDensity.current
 
+    val crosshairFraction = when {
+        samples.isEmpty() -> 1f
+        !hasCrosshair -> 1f
+        else -> fractionForTimestamp(samples, crosshairTimestampMs)
+    }
+    val crosshair = interpolateSample(samples, crosshairFraction)
+
     Box(modifier = modifier) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(samples, activeSeries) {
-                    if (samples.isEmpty()) return@pointerInput
-                    val chartLeft = with(density) { CHART_LEFT_PADDING.toPx() }
-                    val chartRight = size.width - with(density) { CHART_RIGHT_PADDING.toPx() }
-                    val width = chartRight - chartLeft
-                    detectTapGestures { offset ->
-                        if (width <= 0f) return@detectTapGestures
-                        crosshairFraction = ((offset.x - chartLeft) / width).coerceIn(0f, 1f)
+                .pointerInput(density) {
+                    fun updateCrosshairAt(x: Float) {
+                        val current = latestSamples
+                        if (current.isEmpty()) return
+                        val chartLeft = with(density) { CHART_LEFT_PADDING.toPx() }
+                        val chartRight = size.width - with(density) { CHART_RIGHT_PADDING.toPx() }
+                        val width = chartRight - chartLeft
+                        if (width <= 0f) return
+                        val fraction = ((x - chartLeft) / width).coerceIn(0f, 1f)
+                        interpolateSample(current, fraction)?.let { values ->
+                            crosshairTimestampMs = values.timestampMs
+                            hasCrosshair = true
+                        }
                     }
-                }
-                .pointerInput(samples, activeSeries) {
-                    if (samples.isEmpty()) return@pointerInput
-                    val chartLeft = with(density) { CHART_LEFT_PADDING.toPx() }
-                    val chartRight = size.width - with(density) { CHART_RIGHT_PADDING.toPx() }
-                    val width = chartRight - chartLeft
-                    detectDragGestures { change, _ ->
-                        if (width <= 0f) return@detectDragGestures
-                        crosshairFraction = ((change.position.x - chartLeft) / width).coerceIn(0f, 1f)
+
+                    detectDragGestures(
+                        onDragStart = { offset -> updateCrosshairAt(offset.x) },
+                        onDragEnd = {},
+                        onDragCancel = {},
+                    ) { change, _ ->
+                        updateCrosshairAt(change.position.x)
                         change.consume()
                     }
                 },
@@ -173,7 +186,6 @@ fun TelemetryMultiChart(
                 strokeWidth = 1.5f,
             )
 
-            val crosshair = interpolateSample(samples, crosshairFraction)
             crosshair?.let { values ->
                 activeSeries.forEach { series ->
                     val value = values.values[series] ?: return@forEach
@@ -184,7 +196,6 @@ fun TelemetryMultiChart(
             }
         }
 
-        val crosshair = interpolateSample(samples, crosshairFraction)
         if (crosshair != null && activeSeries.isNotEmpty()) {
             Column(
                 modifier = Modifier
@@ -217,6 +228,3 @@ fun TelemetryMultiChart(
         }
     }
 }
-
-@Composable
-private fun Dp.toPx(): Float = with(LocalDensity.current) { toPx() }
