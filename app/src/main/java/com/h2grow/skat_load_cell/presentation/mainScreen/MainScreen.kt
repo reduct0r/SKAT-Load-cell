@@ -14,9 +14,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.h2grow.skat_load_cell.ui.theme.SKATLoadcellTheme
 
 @Composable
 fun MainScreen(
@@ -24,12 +26,20 @@ fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    MainScreenContent(uiState = uiState, onGoToScanner = onGoToScanner)
+}
 
+@Composable
+internal fun MainScreenContent(
+    uiState: MainUiState,
+    onGoToScanner: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -55,7 +65,13 @@ fun MainScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                MetricRow(label = "Вес", value = "${"%.1f".format(uiState.weight)} г")
+                Column {
+                    MetricRow(
+                        label = "Сила тяги",
+                        value = "${"%.2f".format(uiState.tractionForce)} Н"
+                    )
+                    Text("${"%.2f".format(uiState.tractionForce * 9.80665)} грамм")
+                }
                 MetricRow(label = "Ток", value = "${"%.3f".format(uiState.current)} А")
                 MetricRow(label = "Напряжение", value = "${"%.2f".format(uiState.voltage)} В")
 
@@ -92,6 +108,36 @@ private fun MetricRow(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PreviewMainScreenDisconnected() {
+    SKATLoadcellTheme(dynamicColor = false) {
+        MainScreenContent(
+            uiState = MainUiState(),
+            onGoToScanner = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PreviewMainScreenConnected() {
+    SKATLoadcellTheme(dynamicColor = false) {
+        MainScreenContent(
+            uiState = MainUiState(
+                isConnected = true,
+                deviceName = "SKAT-Tenzo",
+                tractionForce = 1234.5f,
+                current = 0.042f,
+                voltage = 5.12f,
+                hx711Ok = true,
+                ina226Ok = true,
+            ),
+            onGoToScanner = {},
         )
     }
 }

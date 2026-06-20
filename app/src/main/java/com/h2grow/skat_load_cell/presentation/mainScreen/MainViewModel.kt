@@ -22,7 +22,7 @@ class MainViewModel @Inject constructor(
         MainUiState(
             isConnected = isConnected,
             deviceName = if (isConnected) loadCellManager.connectedDeviceName else null,
-            weight = telemetry.forceGrams,
+            tractionForce = telemetry.forceGrams,
             current = telemetry.currentAmps,
             voltage = telemetry.busVoltage,
             hx711Ok = telemetry.hx711Ok,
