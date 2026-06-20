@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +28,7 @@ import no.nordicsemi.android.ble.ktx.asFlow
 import no.nordicsemi.android.ble.ktx.suspend
 import org.json.JSONObject
 import java.util.UUID
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SkatLoadCellManager(
@@ -48,6 +51,11 @@ class SkatLoadCellManager(
 
     var connectedDeviceName: String? = null
         private set
+
+    private var pendingPwmPercent: Float? = null
+    private var lastPwmSentAtMs = 0L
+    private var lastSentPwmPercent: Float? = null
+    private var pwmSendJob: Job? = null
 
     override fun getMinLogPriority(): Int = Log.INFO
 
@@ -151,6 +159,10 @@ class SkatLoadCellManager(
     }
 
     override fun onServicesInvalidated() {
+        pwmSendJob?.cancel()
+        pwmSendJob = null
+        pendingPwmPercent = null
+        lastSentPwmPercent = null
         _isConnected.value = false
         telemetryCharacteristic = null
         commandCharacteristic = null
@@ -220,6 +232,13 @@ class SkatLoadCellManager(
     suspend fun reset(): CommandResult =
         sendCommand(JSONObject().put("cmd", "reset"))
 
+    suspend fun calibrateBusVoltage(refVolts: Float): CommandResult =
+        sendCommand(
+            JSONObject()
+                .put("cmd", "calibrate_bus_v")
+                .put("ref_v", refVolts.toDouble()),
+        )
+
     suspend fun recalibrateIna226(): CommandResult =
         sendCommand(JSONObject().put("cmd", "recal_ina226"))
 
@@ -233,13 +252,20 @@ class SkatLoadCellManager(
                 .put("sign", sign),
         )
 
-    suspend fun setShunt(extOhm: Float, brdOhm: Float, includeBoard: Boolean): CommandResult =
+    suspend fun setShunt(extOhm: Float): CommandResult =
         sendCommand(
             JSONObject()
                 .put("cmd", "set_shunt")
                 .put("ext_ohm", extOhm.toDouble())
-                .put("brd_ohm", brdOhm.toDouble())
-                .put("include_brd", includeBoard),
+                .put("brd_ohm", 0.1)
+                .put("include_brd", false),
+        )
+
+    suspend fun setForceSign(sign: Int): CommandResult =
+        sendCommand(
+            JSONObject()
+                .put("cmd", "set_force_sign")
+                .put("sign", sign),
         )
 
     suspend fun armMotors(): CommandResult =
@@ -250,12 +276,48 @@ class SkatLoadCellManager(
 
     @SuppressLint("MissingPermission")
     fun sendMotorPwm(percent: Float) {
+        if (!isReady) return
+        val rounded = roundPwmPercent(percent.coerceIn(0f, 100f))
+        pendingPwmPercent = rounded
+
+        if (rounded == lastSentPwmPercent) return
+
+        val now = System.currentTimeMillis()
+        val elapsed = now - lastPwmSentAtMs
+        if (elapsed >= PWM_MIN_INTERVAL_MS) {
+            flushMotorPwm(force = false)
+        } else if (pwmSendJob?.isActive != true) {
+            pwmSendJob = scope.launch {
+                delay(PWM_MIN_INTERVAL_MS - elapsed)
+                flushMotorPwm(force = false)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun flushPendingMotorPwm() {
+        pwmSendJob?.cancel()
+        pwmSendJob = null
+        flushMotorPwm(force = true)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun flushMotorPwm(force: Boolean) {
+        val pct = pendingPwmPercent ?: return
+        val rounded = roundPwmPercent(pct)
+        if (!force && rounded == lastSentPwmPercent) {
+            pendingPwmPercent = null
+            return
+        }
+        pendingPwmPercent = null
         val commandChar = commandCharacteristic ?: return
         if (!isReady) return
 
+        lastPwmSentAtMs = System.currentTimeMillis()
+        lastSentPwmPercent = rounded
         val payload = JSONObject()
             .put("cmd", "set_pwm")
-            .put("pct", percent.toDouble().coerceIn(0.0, 100.0))
+            .put("pct", rounded.toDouble())
             .toString()
 
         writeCharacteristic(
@@ -264,6 +326,9 @@ class SkatLoadCellManager(
             BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
         ).enqueue()
     }
+
+    private fun roundPwmPercent(pct: Float): Float =
+        (pct * 100f).roundToInt() / 100f
 
     @SuppressLint("MissingPermission")
     private suspend fun sendCommand(payload: JSONObject): CommandResult {
@@ -318,7 +383,11 @@ class SkatLoadCellManager(
             escMaxUs = obj.optInt("esc_max_us", 2000),
             shuntMv = obj.optDouble("shunt_mv", 0.0).toFloat(),
             shuntOhm = obj.optDouble("shunt_ohm", 0.005).toFloat(),
+            shuntExtOhm = obj.optDouble("shunt_ext", obj.optDouble("shunt_ohm", 0.005)).toFloat(),
+            includeBoardShunt = obj.optBoolean("include_brd", false),
             currentSign = obj.optInt("current_sign", 1),
+            forceSign = obj.optInt("force_sign", 1),
+            busVScaleE4 = obj.optInt("bus_v_scale_e4", 10000),
             hx711Raw = obj.optLong("hx711_raw", 0),
         )
     } catch (e: Exception) {
@@ -331,8 +400,11 @@ class SkatLoadCellManager(
             val obj = JSONObject(rawJson)
             val ok = obj.optBoolean("ok", false)
 
-            if (ok && obj.optString("type") == "data") {
-                parseTelemetryJson(rawJson)?.let { _telemetry.value = it }
+            if (ok) {
+                when (obj.optString("type")) {
+                    "data" -> parseTelemetryJson(rawJson)?.let { _telemetry.value = it }
+                    else -> mergeCommandIntoTelemetry(obj)
+                }
             }
 
             CommandResult(
@@ -346,12 +418,39 @@ class SkatLoadCellManager(
         }
     }
 
+    private fun mergeCommandIntoTelemetry(obj: JSONObject) {
+        val current = _telemetry.value
+        _telemetry.value = current.copy(
+            forceGrams = if (obj.has("force_g")) {
+                obj.optDouble("force_g", current.forceGrams.toDouble()).toFloat()
+            } else {
+                current.forceGrams
+            },
+            forceNewtons = if (obj.has("force_g")) {
+                obj.optDouble("force_g", current.forceGrams.toDouble()).toFloat() * GRAVITY_MS2
+            } else {
+                current.forceNewtons
+            },
+            scale = if (obj.has("scale")) {
+                obj.optDouble("scale", current.scale.toDouble()).toFloat()
+            } else {
+                current.scale
+            },
+            hx711Raw = if (obj.has("counts")) {
+                obj.optLong("counts", current.hx711Raw)
+            } else {
+                current.hx711Raw
+            },
+        )
+    }
+
     private fun BluetoothGattService.findCharacteristic(uuid: UUID): BluetoothGattCharacteristic? =
         getCharacteristic(uuid) ?: characteristics.firstOrNull { it.uuid == uuid }
 
     private companion object {
         const val TAG = "SkatLoadCellManager"
         const val COMMAND_TIMEOUT_MS = 5_000L
+        const val PWM_MIN_INTERVAL_MS = 33L
         const val GRAVITY_MS2 = 0.00980665f
     }
 }

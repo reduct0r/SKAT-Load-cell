@@ -12,6 +12,8 @@ data class MainUiState(
     val hx711Ok: Boolean = false,
     val ina226Ok: Boolean = false,
     val motorsArmed: Boolean = false,
+    /** Положение слайдера троттла (сохраняется при навигации). */
+    val throttlePercent: Float = 0f,
     val motorPwmPercent: Float = 0f,
     val motorPwmRaw: Int = 0,
     val escPulseUs: Int = 1000,

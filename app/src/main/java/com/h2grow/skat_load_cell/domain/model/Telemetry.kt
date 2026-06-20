@@ -21,7 +21,11 @@ data class Telemetry(
     val escMaxUs: Int = 2000,
     val shuntMv: Float = 0f,
     val shuntOhm: Float = 0.005f,
+    val shuntExtOhm: Float = 0.005f,
+    val includeBoardShunt: Boolean = false,
     val currentSign: Int = 1,
+    val forceSign: Int = 1,
+    val busVScaleE4: Int = 10000,
     val hx711Raw: Long = 0,
 ) {
     val massGrams: Float get() = forceGrams

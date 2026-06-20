@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -20,10 +19,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,14 +43,19 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var calGramsText by remember { mutableStateOf("") }
-    var shuntExtText by remember { mutableStateOf("0.005") }
-    var shuntBrdText by remember { mutableStateOf("0.100") }
-    var includeBoardShunt by remember { mutableStateOf(false) }
+    var shuntOhmText by remember { mutableStateOf("0.005") }
+    var refBusVText by remember { mutableStateOf("") }
+
+    LaunchedEffect(uiState.shuntExtOhm, uiState.isConnected) {
+        if (uiState.isConnected && uiState.shuntExtOhm > 0f) {
+            shuntOhmText = formatOhm(uiState.shuntExtOhm)
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Калибровка и настройки") },
+                title = { Text("Калибровка") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -68,7 +74,7 @@ fun SettingsScreen(
         ) {
             if (!uiState.isConnected) {
                 Text(
-                    text = "Подключите SKAT-Tenzo для калибровки",
+                    text = "Требуется подключение к SKAT-Tenzo",
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -86,21 +92,33 @@ fun SettingsScreen(
 
             SensorCard(title = "Тензодатчик HX711") {
                 StatusLine("Статус", if (uiState.hx711Ok) "OK" else "нет связи")
-                StatusLine("Scale", "%.3f".format(uiState.scale))
-                StatusLine("Raw ADC", uiState.hx711Raw.toString())
-                if (uiState.hx711Ok && kotlin.math.abs(uiState.hx711Raw) < 500) {
-                    Text(
-                        text = "Raw ≈ 0: проверьте DT→GPIO19, SCK→GPIO18, VCC/GND. После прошивки нажмите «Обнулить» без груза.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                StatusLine("Коэффициент scale", "%.3f".format(uiState.scale))
+                StatusLine("Масса", "${"%.1f".format(uiState.forceGrams)} г")
+                StatusLine("Сырой ADC", uiState.hx711Raw.toString())
+                Hint(
+                    "Калибровка сохраняется в памяти ESP32 (scale и нулевая точка offset). " +
+                        "Приложение Android данные не хранит.",
+                )
+                Hint(
+                    "Калибровка: снять нагрузку → «Обнулить» → установить эталонную массу → " +
+                        "ввести массу в граммах → «Калибровать по массе». Эталон не снимать до завершения.",
+                )
+                Hint(
+                    "«Обнулить» — установить текущее состояние как нулевую точку (0 г). " +
+                        "«Сбросить шкалу» — восстановить коэффициент по умолчанию (420) и выполнить обнуление.",
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Инвертировать знак силы")
+                    Switch(
+                        checked = uiState.forceSign < 0,
+                        onCheckedChange = { viewModel.setForceInverted(it) },
+                        enabled = uiState.isConnected && !uiState.isBusy,
                     )
                 }
-                Text(
-                    text = "1. Снимите груз. 2. Обнулите. 3. Положите эталонный груз. 4. Введите массу и калибруйте.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ActionButton("Обнулить (Tare)", uiState) { viewModel.tare() }
+                ActionButton("Обнулить", uiState) { viewModel.tare() }
                 OutlinedTextField(
                     value = calGramsText,
                     onValueChange = { calGramsText = it },
@@ -116,65 +134,55 @@ fun SettingsScreen(
                 ActionButton("Сбросить шкалу", uiState) { viewModel.resetScale() }
             }
 
-            SensorCard(title = "Ток INA226") {
+            SensorCard(title = "Датчик тока INA226") {
                 StatusLine("Статус", if (uiState.ina226Ok) "OK" else "нет I2C")
-                StatusLine("Калибровка шунта", if (uiState.ina226CalOk) "OK" else "нет")
                 StatusLine("Напряжение шины", "${"%.2f".format(uiState.busVoltage)} В")
-                StatusLine("Шунт ΔU", "${"%.3f".format(uiState.shuntMv)} mV")
-                StatusLine("Eff. R", "${"%.5f".format(uiState.shuntOhm)} Ω")
-                if (uiState.ina226Addr != 0) {
-                    StatusLine("Адрес I2C", "0x${uiState.ina226Addr.toString(16).uppercase()}")
-                }
-                if (uiState.busVoltage < 1f && uiState.ina226Ok) {
-                    Text(
-                        text = "Bus = 0 В: подключите VIN+ модуля INA226 к BAT+ аккумулятора (14.8 В). " +
-                            "GND модуля — общая земля с PDB.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Text(
-                    text = "High-side: BAT+ → IN+ → [внешний 5 mΩ] → IN− → PDB+. " +
-                        "R100 на модуле (0.1 Ω) учитывается только если ток идёт и через него (переключатель ниже). " +
-                        "Если shunt ΔU = 0 при нагрузке — IN+/IN− не на вашем шунте.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                StatusLine("Масштаб напряжения", "${uiState.busVScaleE4} (10000 = без коррекции)")
+                StatusLine("ΔU шунта", "${"%.3f".format(uiState.shuntMv)} mV")
+                StatusLine("Сопротивление шунта", "${formatOhm(uiState.shuntExtOhm)} Ω")
+                Hint(
+                    "Измерение: I = ΔU / R. Шунт устанавливается в разрыв плюсовой линии между IN+ и IN−. " +
+                        "VIN+ подключается к BAT+ (той же точке, где измеряется эталонное напряжение).",
+                )
+                Hint(
+                    "Калибровка напряжения: измерить напряжение шины мультиметром → ввести значение → " +
+                        "«Калибровать напряжение». Повторная калибровка заменяет коэффициент, не суммируется.",
+                )
+                Hint(
+                    "«Обнулить ток» — зафиксировать потребление в режиме покоя и вычитать смещение. " +
+                        "Двигатель должен быть disarm, нагрузка отсутствует.",
+                )
+                Hint(
+                    "«Перекалибровать INA226» — пересчёт внутренних регистров микросхемы. " +
+                        "Применяется после изменения сопротивления шунта.",
                 )
                 OutlinedTextField(
-                    value = shuntExtText,
-                    onValueChange = { shuntExtText = it },
+                    value = refBusVText,
+                    onValueChange = { refBusVText = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Внешний шунт, Ω") },
+                    label = { Text("Эталонное напряжение, В") },
+                    supportingText = { Text("Значение с мультиметра на BAT+") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     enabled = uiState.isConnected && !uiState.isBusy,
                     singleLine = true,
                 )
+                ActionButton("Калибровать напряжение", uiState) {
+                    viewModel.calibrateBusVoltage(
+                        refBusVText.replace(',', '.').toFloatOrNull() ?: 0f,
+                    )
+                }
                 OutlinedTextField(
-                    value = shuntBrdText,
-                    onValueChange = { shuntBrdText = it },
+                    value = shuntOhmText,
+                    onValueChange = { shuntOhmText = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("R100 на модуле, Ω") },
+                    label = { Text("Сопротивление шунта, Ω") },
+                    supportingText = { Text("3,6 mΩ = 0,0036") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     enabled = uiState.isConnected && !uiState.isBusy,
                     singleLine = true,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Добавить R100 модуля (серия)")
-                    Switch(
-                        checked = includeBoardShunt,
-                        onCheckedChange = { includeBoardShunt = it },
-                        enabled = uiState.isConnected && !uiState.isBusy,
-                    )
-                }
                 ActionButton("Применить шунт", uiState) {
-                    viewModel.applyShunt(
-                        extOhm = shuntExtText.replace(',', '.').toFloatOrNull() ?: 0.005f,
-                        brdOhm = shuntBrdText.replace(',', '.').toFloatOrNull() ?: 0.1f,
-                        includeBoard = includeBoardShunt,
-                    )
+                    viewModel.applyShunt(shuntOhmText.replace(',', '.').toFloatOrNull() ?: 0.005f)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -187,23 +195,35 @@ fun SettingsScreen(
                         enabled = uiState.isConnected && !uiState.isBusy,
                     )
                 }
-                ActionButton("Обнулить ток (без нагрузки)", uiState) { viewModel.zeroCurrent() }
+                ActionButton("Обнулить ток", uiState) { viewModel.zeroCurrent() }
                 ActionButton("Перекалибровать INA226", uiState) { viewModel.recalibrateIna226() }
             }
 
-            SensorCard(title = "ESC / двигатели T-Motor") {
+            SensorCard(title = "Привод ESC (Skywalker 40A)") {
                 StatusLine("PWM", "50 Гц, ${uiState.escMinUs}–${uiState.escMaxUs} µs")
-                StatusLine("Текущий импульс", "${uiState.escPulseUs} µs")
+                StatusLine("Импульс", "${uiState.escPulseUs} µs")
                 StatusLine("Arm", if (uiState.motorsArmed) "да" else "нет")
-                Text(
-                    text = "Skywalker 40A: белый → GPIO25/26, чёрный GND, 1000 µs = стоп, 2000 µs = макс. " +
-                        "При включении ESC получает мин. импульс 2 с. Снимите пропellers при настройке!",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Hint(
+                    "Управление: сигнал — GPIO25/26, общий GND. Диапазон импульса: 1000 µs (стоп) — 2000 µs (максимум).",
                 )
             }
         }
     }
+}
+
+private fun formatOhm(value: Float): String =
+    when {
+        value >= 0.01f -> "%.3f".format(value)
+        else -> "%.5f".format(value)
+    }
+
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

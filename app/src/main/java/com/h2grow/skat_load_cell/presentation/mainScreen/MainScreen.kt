@@ -23,11 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +62,7 @@ fun MainScreen(
         onResetCharts = chartsViewModel::reset,
         onArmToggle = { armed -> viewModel.setMotorsArmed(armed) },
         onMotorPwmChange = viewModel::setMotorPwm,
+        onMotorPwmRelease = viewModel::flushMotorPwm,
     )
 }
 
@@ -81,16 +78,10 @@ internal fun MainScreenContent(
     onResetCharts: () -> Unit = {},
     onArmToggle: (Boolean) -> Unit = {},
     onMotorPwmChange: (Float) -> Unit = {},
+    onMotorPwmRelease: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var localPwm by remember { mutableFloatStateOf(0f) }
-    var isDraggingPwm by remember { mutableStateOf(false) }
-
-    LaunchedEffect(uiState.motorPwmPercent, uiState.motorsArmed) {
-        if (!isDraggingPwm) {
-            localPwm = if (uiState.motorsArmed) uiState.motorPwmPercent else 0f
-        }
-    }
+    val throttle = uiState.throttlePercent
 
     Column(
         modifier = modifier
@@ -199,20 +190,23 @@ internal fun MainScreenContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MotorPwmReadout(
-                percent = localPwm,
-                escPulseUs = uiState.escPulseUs,
+                percent = throttle,
+                escPulseUs = (1000 + throttle * 10f).toInt(),
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
 
             MotorThrottleSlider(
-                value = localPwm,
+                value = throttle,
                 onValueChange = { value ->
-                    localPwm = value
                     if (uiState.isConnected && uiState.motorsArmed) {
                         onMotorPwmChange(value)
                     }
                 },
-                onDraggingChange = { isDraggingPwm = it },
+                onDraggingChange = { dragging ->
+                    if (!dragging && uiState.isConnected && uiState.motorsArmed) {
+                        onMotorPwmRelease()
+                    }
+                },
                 enabled = uiState.isConnected && uiState.motorsArmed,
             )
 
@@ -331,7 +325,7 @@ private fun PreviewMainScreenArmed() {
                 hx711Ok = true,
                 ina226Ok = true,
                 motorsArmed = true,
-                motorPwmPercent = 42f,
+                throttlePercent = 42f,
                 escPulseUs = 1420,
             ),
             onGoToScanner = {},

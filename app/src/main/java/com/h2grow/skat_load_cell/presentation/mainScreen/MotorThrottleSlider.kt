@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 
 @Composable
 fun MotorThrottleSlider(
@@ -81,7 +82,7 @@ fun MotorThrottleSlider(
                             isDragging = true
                             onDraggingChange(true)
                             val fraction = (offset.x / size.width).coerceIn(0f, 1f)
-                            dragValue = fraction * 100f
+                            dragValue = (fraction * 100f * 100f).roundToInt() / 100f
                             onValueChange(dragValue)
                         },
                         onDragEnd = {
@@ -94,8 +95,11 @@ fun MotorThrottleSlider(
                         },
                         onHorizontalDrag = { _, dragAmount ->
                             val fractionDelta = dragAmount / size.width * 100f
-                            dragValue = (dragValue + fractionDelta).coerceIn(0f, 100f)
-                            onValueChange(dragValue)
+                            val next = ((dragValue + fractionDelta).coerceIn(0f, 100f) * 100f).roundToInt() / 100f
+                            if (next != dragValue) {
+                                dragValue = next
+                                onValueChange(dragValue)
+                            }
                         },
                     )
                 },
