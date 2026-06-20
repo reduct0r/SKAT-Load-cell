@@ -220,6 +220,29 @@ class SkatLoadCellManager(
     suspend fun reset(): CommandResult =
         sendCommand(JSONObject().put("cmd", "reset"))
 
+    suspend fun armMotors(): CommandResult =
+        sendCommand(JSONObject().put("cmd", "arm"))
+
+    suspend fun disarmMotors(): CommandResult =
+        sendCommand(JSONObject().put("cmd", "disarm"))
+
+    @SuppressLint("MissingPermission")
+    fun sendMotorPwm(percent: Float) {
+        val commandChar = commandCharacteristic ?: return
+        if (!isReady) return
+
+        val payload = JSONObject()
+            .put("cmd", "set_pwm")
+            .put("pct", percent.toDouble().coerceIn(0.0, 100.0))
+            .toString()
+
+        writeCharacteristic(
+            commandChar,
+            Data.from(payload),
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
+        ).enqueue()
+    }
+
     @SuppressLint("MissingPermission")
     private suspend fun sendCommand(payload: JSONObject): CommandResult {
         val commandChar = commandCharacteristic
@@ -248,8 +271,15 @@ class SkatLoadCellManager(
 
     private fun parseTelemetryJson(json: String): Telemetry? = try {
         val obj = JSONObject(json)
+        val forceGrams = obj.optDouble("force_g", 0.0).toFloat()
+        val forceNewtons = if (obj.has("force_n")) {
+            obj.optDouble("force_n", 0.0).toFloat()
+        } else {
+            forceGrams * GRAVITY_MS2
+        }
         Telemetry(
-            forceGrams = obj.optDouble("force_g", 0.0).toFloat(),
+            forceGrams = forceGrams,
+            forceNewtons = forceNewtons,
             currentAmps = obj.optDouble("current_a", 0.0).toFloat(),
             busVoltage = obj.optDouble("bus_v", 0.0).toFloat(),
             hx711Ok = obj.optBoolean("hx711_ok", false),
@@ -258,6 +288,9 @@ class SkatLoadCellManager(
             ina226Addr = obj.optInt("ina226_addr", 0),
             i2cScan = obj.optString("i2c_scan", ""),
             scale = obj.optDouble("scale", 0.0).toFloat(),
+            motorsArmed = obj.optBoolean("motors_armed", false),
+            motorPwmPercent = obj.optDouble("motor_pwm_pct", 0.0).toFloat(),
+            motorPwmRaw = obj.optInt("motor_pwm", 0),
         )
     } catch (e: Exception) {
         log(Log.WARN, "Bad telemetry JSON: $json (${e.message})")
@@ -290,5 +323,6 @@ class SkatLoadCellManager(
     private companion object {
         const val TAG = "SkatLoadCellManager"
         const val COMMAND_TIMEOUT_MS = 5_000L
+        const val GRAVITY_MS2 = 0.00980665f
     }
 }
