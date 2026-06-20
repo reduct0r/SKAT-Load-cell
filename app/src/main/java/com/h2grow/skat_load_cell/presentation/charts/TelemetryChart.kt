@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -49,14 +50,14 @@ fun TelemetryMultiChart(
     var hasCrosshair by remember { mutableStateOf(false) }
     val latestSamples by rememberUpdatedState(samples)
     val textMeasurer = rememberTextMeasurer()
-    val axisTextColor = MaterialTheme.colorScheme.onSurface
+    val axisLabelColor = Color(0xFFE2E8F0)
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
         fontSize = 10.sp,
-        color = axisTextColor,
+        color = axisLabelColor,
     )
     val axisStyle = MaterialTheme.typography.labelSmall.copy(
         fontSize = 9.sp,
-        color = axisTextColor,
+        color = axisLabelColor,
     )
     val crosshairLineColor = MaterialTheme.colorScheme.outline
     val density = LocalDensity.current
@@ -97,6 +98,8 @@ fun TelemetryMultiChart(
                     }
                 },
         ) {
+            drawRect(color = Color(0xFF0F172A), size = size)
+
             if (samples.isEmpty()) return@Canvas
 
             val chartLeft = CHART_LEFT_PADDING.toPx()
@@ -108,8 +111,15 @@ fun TelemetryMultiChart(
 
             if (chartWidth <= 0f || chartHeight <= 0f) return@Canvas
 
-            val gridColor = Color(0xFF334155)
-            val axisColor = Color(0xFF64748B)
+            val chartBackground = Color(0xFF1E293B)
+            drawRect(
+                color = chartBackground,
+                topLeft = Offset(chartLeft, chartTop),
+                size = Size(chartWidth, chartHeight),
+            )
+
+            val gridColor = Color(0xFF475569)
+            val axisColor = Color(0xFF94A3B8)
 
             for (i in 0..4) {
                 val y = chartTop + chartHeight * i / 4f

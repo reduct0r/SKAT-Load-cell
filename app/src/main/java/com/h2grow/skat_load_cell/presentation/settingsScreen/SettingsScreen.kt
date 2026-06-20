@@ -91,21 +91,15 @@ fun SettingsScreen(
             }
 
             SensorCard(title = "Тензодатчик HX711") {
-                StatusLine("Статус", if (uiState.hx711Ok) "OK" else "нет связи")
-                StatusLine("Коэффициент scale", "%.3f".format(uiState.scale))
-                StatusLine("Масса", "${"%.1f".format(uiState.forceGrams)} г")
-                StatusLine("Сырой ADC", uiState.hx711Raw.toString())
+                StatusLine("Статус", if (uiState.hx711Ok) "исправен" else "нет связи")
+                StatusLine("Текущая масса", "${"%.1f".format(uiState.forceGrams)} г")
                 Hint(
-                    "Калибровка сохраняется в памяти ESP32 (scale и нулевая точка offset). " +
-                        "Приложение Android данные не хранит.",
+                    "Порядок калибровки: снять нагрузку → «Обнулить» → установить эталонную массу → " +
+                        "указать массу в граммах → «Калибровать по массе». Эталон не снимать до завершения.",
                 )
                 Hint(
-                    "Калибровка: снять нагрузку → «Обнулить» → установить эталонную массу → " +
-                        "ввести массу в граммах → «Калибровать по массе». Эталон не снимать до завершения.",
-                )
-                Hint(
-                    "«Обнулить» — установить текущее состояние как нулевую точку (0 г). " +
-                        "«Сбросить шкалу» — восстановить коэффициент по умолчанию (420) и выполнить обнуление.",
+                    "«Обнулить» — зафиксировать нулевую точку без нагрузки. " +
+                        "«Сбросить шкалу» — вернуть заводские параметры и обнулить датчик.",
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -135,33 +129,25 @@ fun SettingsScreen(
             }
 
             SensorCard(title = "Датчик тока INA226") {
-                StatusLine("Статус", if (uiState.ina226Ok) "OK" else "нет I2C")
-                StatusLine("Напряжение шины", "${"%.2f".format(uiState.busVoltage)} В")
-                StatusLine("Масштаб напряжения", "${uiState.busVScaleE4} (10000 = без коррекции)")
-                StatusLine("ΔU шунта", "${"%.3f".format(uiState.shuntMv)} mV")
-                StatusLine("Сопротивление шунта", "${formatOhm(uiState.shuntExtOhm)} Ω")
+                StatusLine("Статус", if (uiState.ina226Ok) "исправен" else "нет связи")
+                StatusLine("Напряжение", "${"%.2f".format(uiState.busVoltage)} В")
                 Hint(
-                    "Измерение: I = ΔU / R. Шунт устанавливается в разрыв плюсовой линии между IN+ и IN−. " +
-                        "VIN+ подключается к BAT+ (той же точке, где измеряется эталонное напряжение).",
+                    "Шунт: указать сопротивление в омах → «Применить шунт». " +
+                        "После смены шунта нажать «Перекалибровать INA226».",
                 )
                 Hint(
-                    "Калибровка напряжения: измерить напряжение шины мультиметром → ввести значение → " +
-                        "«Калибровать напряжение». Повторная калибровка заменяет коэффициент, не суммируется.",
+                    "Напряжение: измерить мультиметром на клеммах питания → ввести значение → " +
+                        "«Калибровать напряжение».",
                 )
                 Hint(
-                    "«Обнулить ток» — зафиксировать потребление в режиме покоя и вычитать смещение. " +
-                        "Двигатель должен быть disarm, нагрузка отсутствует.",
-                )
-                Hint(
-                    "«Перекалибровать INA226» — пересчёт внутренних регистров микросхемы. " +
-                        "Применяется после изменения сопротивления шунта.",
+                    "Ток: при выключенном приводе и отсутствии нагрузки нажать «Обнулить ток».",
                 )
                 OutlinedTextField(
                     value = refBusVText,
                     onValueChange = { refBusVText = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Эталонное напряжение, В") },
-                    supportingText = { Text("Значение с мультиметра на BAT+") },
+                    supportingText = { Text("Показание мультиметра") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     enabled = uiState.isConnected && !uiState.isBusy,
                     singleLine = true,
@@ -199,12 +185,10 @@ fun SettingsScreen(
                 ActionButton("Перекалибровать INA226", uiState) { viewModel.recalibrateIna226() }
             }
 
-            SensorCard(title = "Привод ESC (Skywalker 40A)") {
-                StatusLine("PWM", "50 Гц, ${uiState.escMinUs}–${uiState.escMaxUs} µs")
-                StatusLine("Импульс", "${uiState.escPulseUs} µs")
-                StatusLine("Arm", if (uiState.motorsArmed) "да" else "нет")
+            SensorCard(title = "Привод ESC") {
                 Hint(
-                    "Управление: сигнал — GPIO25/26, общий GND. Диапазон импульса: 1000 µs (стоп) — 2000 µs (максимум).",
+                    "Диапазон импульса: ${uiState.escMinUs}–${uiState.escMaxUs} µs " +
+                        "(минимум — останов, максимум — полная мощность).",
                 )
             }
         }

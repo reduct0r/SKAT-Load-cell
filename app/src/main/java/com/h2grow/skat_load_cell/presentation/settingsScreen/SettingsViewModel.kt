@@ -56,42 +56,42 @@ class SettingsViewModel @Inject constructor(
         initialValue = SettingsUiState(),
     )
 
-    fun tare() = runCommand("Обнуление…") { loadCellManager.tare() }
+    fun tare() = runCommand("Выполняется обнуление…") { loadCellManager.tare() }
 
     fun calibrate(grams: Float) {
         if (grams <= 0f) {
-            showMessage("Введите массу больше 0 г", isError = true)
+            showMessage("Укажите эталонную массу больше 0 г", isError = true)
             return
         }
-        runCommand("Калибровка…") { loadCellManager.calibrate(grams) }
+        runCommand("Выполняется калибровка…") { loadCellManager.calibrate(grams) }
     }
 
-    fun resetScale() = runCommand("Сброс шкалы…") { loadCellManager.reset() }
+    fun resetScale() = runCommand("Выполняется сброс…") { loadCellManager.reset() }
 
-    fun recalibrateIna226() = runCommand("Калибровка INA226…") { loadCellManager.recalibrateIna226() }
+    fun recalibrateIna226() = runCommand("Выполняется перекалибровка…") { loadCellManager.recalibrateIna226() }
 
-    fun zeroCurrent() = runCommand("Обнуление тока…") { loadCellManager.zeroCurrent() }
+    fun zeroCurrent() = runCommand("Выполняется обнуление тока…") { loadCellManager.zeroCurrent() }
 
     fun setCurrentInverted(inverted: Boolean) {
         val sign = if (inverted) -1 else 1
-        runCommand("Смена знака тока…") { loadCellManager.setCurrentSign(sign) }
+        runCommand("Применяется настройка…") { loadCellManager.setCurrentSign(sign) }
     }
 
     fun setForceInverted(inverted: Boolean) {
         val sign = if (inverted) -1 else 1
-        runCommand("Смена знака силы…") { loadCellManager.setForceSign(sign) }
+        runCommand("Применяется настройка…") { loadCellManager.setForceSign(sign) }
     }
 
     fun applyShunt(extOhm: Float) {
-        runCommand("Сохранение шунта…") { loadCellManager.setShunt(extOhm) }
+        runCommand("Сохранение параметров шунта…") { loadCellManager.setShunt(extOhm) }
     }
 
     fun calibrateBusVoltage(refVolts: Float) {
         if (refVolts < 1f) {
-            showMessage("Введите эталонное напряжение ≥ 1 В", isError = true)
+            showMessage("Укажите эталонное напряжение не менее 1 В", isError = true)
             return
         }
-        runCommand("Калибровка напряжения…") { loadCellManager.calibrateBusVoltage(refVolts) }
+        runCommand("Выполняется калибровка напряжения…") { loadCellManager.calibrateBusVoltage(refVolts) }
     }
 
     private fun runCommand(status: String, block: suspend () -> com.h2grow.skat_load_cell.domain.model.CommandResult) {
@@ -103,20 +103,20 @@ class SettingsViewModel @Inject constructor(
                     val detail = formatCommandFeedback(result.rawJson)
                     feedback.value = Feedback(
                         busy = false,
-                        message = detail ?: (result.cmd?.let { "OK: $it" } ?: "Готово"),
+                        message = detail ?: "Операция выполнена.",
                         isError = false,
                     )
                 } else {
                     feedback.value = Feedback(
                         busy = false,
-                        message = result.error ?: "Ошибка",
+                        message = result.error ?: "Операция не выполнена",
                         isError = true,
                     )
                 }
             } catch (e: Exception) {
                 feedback.value = Feedback(
                     busy = false,
-                    message = e.message ?: "Ошибка",
+                    message = e.message ?: "Операция не выполнена",
                     isError = true,
                 )
             }
@@ -131,26 +131,23 @@ class SettingsViewModel @Inject constructor(
         val obj = JSONObject(rawJson)
         when (obj.optString("cmd")) {
             "calibrate" -> {
-                val scale = obj.optDouble("scale", 0.0)
                 val ref = obj.optDouble("grams", 0.0)
                 val measured = obj.optDouble("force_g", 0.0)
-                "Калибровка OK: scale=%.1f, эталон=%.0f г, сейчас=%.1f г".format(
-                    scale, ref, measured,
-                )
+                "Калибровка массы выполнена. Эталон: ${ref.toInt()} г, показание: ${
+                    "%.1f".format(measured)
+                } г."
             }
-            "tare" -> "Обнулено (offset сохранён на ESP32)"
+            "tare" -> "Нулевая точка массы установлена."
+            "reset" -> "Шкала массы восстановлена по умолчанию."
             "calibrate_bus_v" -> {
-                val scale = obj.optInt("bus_v_scale_e4", 0)
-                val raw = if (obj.has("raw_v")) {
-                    obj.optDouble("raw_v", 0.0)
-                } else {
-                    obj.optDouble("measured_v", 0.0)
-                }
                 val ref = obj.optDouble("ref_v", 0.0)
-                "Напряжение OK: scale=%d (сырое %.2f В → эталон %.2f В)".format(
-                    scale, raw, ref,
-                )
+                "Калибровка напряжения выполнена. Эталон: ${"%.2f".format(ref)} В."
             }
+            "set_shunt" -> "Параметры шунта сохранены."
+            "zero_current" -> "Нулевая точка тока установлена."
+            "recal_ina226" -> "Перекалибровка датчика тока выполнена."
+            "set_current_sign" -> "Направление отсчёта тока изменено."
+            "set_force_sign" -> "Направление отсчёта силы изменено."
             else -> null
         }
     } catch (_: Exception) {
